@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Cronograma Cíclico</title>
+
+<!-- Manifest PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#21a498">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root { --prim:#21a498; }
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;background:#f5f7f7;margin:0}
+  .container{max-width:1080px;margin:24px auto;background:#fff;padding:20px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+  h1,h2,h3{margin:8px 0;text-align:center}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{flex:1 1 320px;background:#ffffff;border:1px solid #e9ecef;border-radius:12px;padding:14px}
+  label{font-weight:600}
+  select,button,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #d7dbdf}
+  button{background:var(--prim);border:none;color:#fff;cursor:pointer}
+  button:hover{filter:brightness(0.9)}
+  ul{list-style:none;margin:0;padding:0}
+  li.task{padding:10px;border:1px solid #e6e9ee;background:#20a49822;margin:6px 0;border-radius:10px;display:flex;align-items:center;gap:8px}
+  .muted{color:#6b7280;font-size:12px}
+  .pill{display:inline-block;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:700;margin-left:auto;background:#eaf5f4;color:#0d6b63;border:1px solid #bde1dc}
+  .tag-fixa{background:#eef2ff;color:#3949ab;border-color:#c7d2fe}
+  .tag-var{background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+  .tag-vidro{background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 12px}
+  .topbar .info{font-size:14px}
+  .divider{height:1px;background:#eef2f7;margin:14px 0}
+  .kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+  .col{min-width:220px;background:#20a49810;border:1px solid #cfe8e5;border-radius:12px}
+  .col h4{margin:0;padding:8px 10px;text-align:center;color:#fff;background:var(--prim);border-radius:10px 10px 0 0;font-weight:700}
+  .col .body{padding:10px}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <h1><img src="https://reombcvqyieerjomosbn.supabase.co/storage/v1/object/public/Assets/logo.png" alt="Logo" style="max-width:150px;">
+<div>Cronograma de Tarefas<div></h1>
+  <div id="login" class="card">
+    <div class="row" style="align-items:end;">
+      <div>
+        <label>Funcionário</label><br/>
+        <select id="funcionarioSelect">
+          <option>Vitor</option>
+          <option>Bih</option>
+          <option>Bia</option>
+          <option>Matheus</option>
+        </select>
+      </div>
+      <div>
+        <label>Semana</label><br/>
+        <select id="semanaInicial">
+          <option value="1">Semana 1</option>
+          <option value="2">Semana 2</option>
+          <option value="3">Semana 3</option>
+          <option value="4">Semana 4</option>
+        </select>
+      </div>
+      <div>
+        <label>Dia </label><br/>
+        <select id="diaInicial">
+          <option value="0">Segunda</option>
+          <option value="1">Terça</option>
+          <option value="2">Quarta</option>
+          <option value="3">Quinta</option>
+          <option value="4">Sexta</option>
+        </select>
+      </div>
+      <div><button id="btnEntrar">Entrar</button></div>
+      <div><button id="btnSupervisor">Painel do Supervisor</button></div>
+    </div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <div class="topbar">
+        <div class="info">
+          <strong>Bem-vindo, <span id="nomeFuncionario"></span></strong><br/>
+          Semana <span id="semanaAtual"></span> · <span id="diaAtual"></span>
+        </div>
+        <div class="row" style="gap:6px">
+          <button id="btnMarcarTodas">Marcar todas</button>
+          <button id="btnAvancar">Próximo dia</button>
+          <button id="btnAnterior">Dia Anterior</button>
+          <button id="btnHome"> Voltar</button>
+        </div>
+      </div>
+      <div id="listaTarefas"></div>
+    </div>
+  </div>
+
+  <div id="supervisor" style="display:none">
+    <div class="card">
+      <div class="topbar">
+        <h2 style="margin:0">Painel do Supervisor</h2>
+        <button id="btnVoltar">Voltar</button>
+      </div>
+      <div id="sumarioSemana"></div>
+      <div class="divider"></div>
+      <h3>Quadro Semanal (Kanban)</h3>
+      <div id="kanban" class="kanban"></div>
+      <div class="divider"></div>
+      <h3>Fixas da Semana (lista)</h3>
+      <div id="fixasSemana"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======= SUPABASE CONFIGURAÇÃO ======= */
+/* FIX 1: string em UMA LINHA (sem quebra de linha no meio) */
+const supabaseUrl = "https://reombcvqyieerjomosbn.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJlb21iY3ZxeWllZXJqb21vc2JuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU0NTEzMjYsImV4cCI6MjA3MTAyNzMyNn0.Y8t97Fs00LgezofsF1AxSRQYfaEKj2QHtCOvL02uBfI";
+
+/* FIX 2: não sombrear o nome "supabase" — use window.supabase e guarde em "sb" */
+const sb = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+/* ======= CONFIGURAÇÃO APP ======= */
+const FUNCIONARIOS = ["Vitor","Bih","Bia","Jô"];
+const DIAS = ["Segunda","Terça","Quarta","Quinta","Sexta"];
+
+/* Rotação de vidraçarias */
+const VIDRACARIAS = {
+  1:{ "Clube/Portaria":["Bih","Bia"], "Prainha":["Matheus","Vitor"] },
+  2:{ "Clube/Portaria":["Matheus","Vitor"], "Prainha":["Bih","Bia"] },
+  3:{ "Clube/Portaria":["Bih","Bia"], "Prainha":["Matheus","Vitor"] },
+  4:{ "Clube/Portaria":["Matheus","Vitor"], "Prainha":["Bih","Bia"] }
+};
+
+/* Tarefas fixas por semana */
+const FIXAS = {
+  1: [
+    {tarefa:"Deck Gourmet + P.N.E", responsavel:"Bih"},
+    {tarefa:"Brinquedoteca", responsavel:"Bia"},
+    {tarefa:"Salão de Festas", responsavel:"Matheus"},
+    {tarefa:"Banheiro M + P.N.E Clube", responsavel:"Vitor"},
+    {tarefa:"Banheiro F + P.N.E Clube", responsavel:"Vitor"},
+    {tarefa:"Salão de Jogos", responsavel:"Bia"},
+    {tarefa:"Academia", responsavel:"Bia"},
+    {tarefa:"Portaria Delivery + Depósitos + Totens", responsavel:"Matheus"},
+    {tarefa:"Administração + Copa", responsavel:"Bih"},
+    {tarefa:"Banheiro Feminino", responsavel:"Vitor"},
+    {tarefa:"Banheiro Masculino + P.N.E", responsavel:"Vitor"},
+    {tarefa:"Portaria + Pear + Sauna + Cajueiro", responsavel:"Bia"},
+    {tarefa:"Churrasqueira 1 + Quadra de Tênis", responsavel:"Bih"},
+    {tarefa:"Churrasqueira 2 + Quadra Poliesportiva", responsavel:"Bia"},
+    {tarefa:"Espaço Zen + Rua Acalmada", responsavel:"Matheus"},
+    {tarefa:"Praça Área Esportiva (Playground, Academia ao Ar Livre, etc)", responsavel:"Matheus"},
+    {tarefa:"Mirante Completo - Escada + Vidros e Corrimão", responsavel:"Vitor"},
+    {tarefa:"Parque Linear + Orquidário + Calçadão", responsavel:"Matheus"}
+  ],
+  2: [
+    {tarefa:"Deck Gourmet + P.N.E", responsavel:"Vitor"},
+    {tarefa:"Brinquedoteca", responsavel:"Matheus"},
+    {tarefa:"Salão de Festas", responsavel:"Bih"},
+    {tarefa:"Banheiro M + P.N.E Clube", responsavel:"Bia"},
+    {tarefa:"Banheiro F + P.N.E Clube", responsavel:"Bia"},
+    {tarefa:"Salão de Jogos", responsavel:"Matheus"},
+    {tarefa:"Academia", responsavel:"Matheus"},
+    {tarefa:"Portaria Delivery + Depósitos + Totens", responsavel:"Bih"},
+    {tarefa:"Administração + Copa", responsavel:"Vitor"},
+    {tarefa:"Banheiro Feminino", responsavel:"Bia"},
+    {tarefa:"Banheiro Masculino + P.N.E", responsavel:"Bia"},
+    {tarefa:"Portaria + Pear + Sauna + Cajueiro", responsavel:"Matheus"},
+    {tarefa:"Churrasqueira 1 + Quadra de Tênis", responsavel:"Vitor"},
+    {tarefa:"Churrasqueira 2 + Quadra Poliesportiva", responsavel:"Matheus"},
+    {tarefa:"Espaço Zen + Rua Acalmada", responsavel:"Bih"},
+    {tarefa:"Praça Área Esportiva (Playground, Academia ao Ar Livre, etc)", responsavel:"Bih"},
+    {tarefa:"Mirante Completo - Escada + Vidros e Corrimão", responsavel:"Bia"},
+    {tarefa:"Parque Linear + Orquidário + Calçadão", responsavel:"Bih"}
+  ],
+  3: [
+    {tarefa:"Deck Gourmet + P.N.E", responsavel:"Bia"},
+    {tarefa:"Brinquedoteca", responsavel:"Bih"},
+    {tarefa:"Salão de Festas", responsavel:"Vitor"},
+    {tarefa:"Banheiro M + P.N.E Clube", responsavel:"Matheus"},
+    {tarefa:"Banheiro F + P.N.E Clube", responsavel:"Matheus"},
+    {tarefa:"Salão de Jogos", responsavel:"Bih"},
+    {tarefa:"Academia", responsavel:"Bih"},
+    {tarefa:"Portaria Delivery + Depósitos + Totens", responsavel:"Vitor"},
+    {tarefa:"Administração + Copa", responsavel:"Bia"},
+    {tarefa:"Banheiro Feminino", responsavel:"Matheus"},
+    {tarefa:"Banheiro Masculino + P.N.E", responsavel:"Matheus"},
+    {tarefa:"Portaria + Pear + Sauna + Cajueiro", responsavel:"Bih"},
+    {tarefa:"Churrasqueira 1 + Quadra de Tênis", responsavel:"Bia"},
+    {tarefa:"Churrasqueira 2 + Quadra Poliesportiva", responsavel:"Bih"},
+    {tarefa:"Espaço Zen + Rua Acalmada", responsavel:"Vitor"},
+    {tarefa:"Praça Área Esportiva (Playground, Academia ao Ar Livre, etc)", responsavel:"Vitor"},
+    {tarefa:"Mirante Completo - Escada + Vidros e Corrimão", responsavel:"Matheus"},
+    {tarefa:"Parque Linear + Orquidário + Calçadão", responsavel:"Vitor"}
+  ],
+  4: [
+    {tarefa:"Deck Gourmet + P.N.E", responsavel:"Matheus"},
+    {tarefa:"Brinquedoteca", responsavel:"Vitor"},
+    {tarefa:"Salão de Festas", responsavel:"Bia"},
+    {tarefa:"Banheiro M + P.N.E Clube", responsavel:"Bih"},
+    {tarefa:"Banheiro F + P.N.E Clube", responsavel:"Bih"},
+    {tarefa:"Salão de Jogos", responsavel:"Vitor"},
+    {tarefa:"Academia", responsavel:"Vitor"},
+    {tarefa:"Portaria Delivery + Depósitos + Totens", responsavel:"Bia"},
+    {tarefa:"Administração + Copa", responsavel:"Matheus"},
+    {tarefa:"Banheiro Feminino", responsavel:"Bih"},
+    {tarefa:"Banheiro Masculino + P.N.E", responsavel:"Bih"},
+    {tarefa:"Portaria + Pear + Sauna + Cajueiro", responsavel:"Vitor"},
+    {tarefa:"Churrasqueira 1 + Quadra de Tênis", responsavel:"Matheus"},
+    {tarefa:"Churrasqueira 2 + Quadra Poliesportiva", responsavel:"Vitor"},
+    {tarefa:"Espaço Zen + Rua Acalmada", responsavel:"Bia"},
+    {tarefa:"Praça Área Esportiva (Playground, Academia ao Ar Livre, etc)", responsavel:"Bia"},
+    {tarefa:"Mirante Completo - Escada + Vidros e Corrimão", responsavel:"Bih"},
+    {tarefa:"Parque Linear + Orquidário + Calçadão", responsavel:"Bia"}
+  ]
+};
+
+/* Regras variáveis */
+function variaveisDoDia(semana, diaNome, funcionario){
+  const out = [];
+  if (funcionario==="Vitor" && (diaNome==="Segunda"||diaNome==="Quarta"||diaNome==="Sexta"))
+    out.push({tarefa:"Verificação de lixeiras", tipo:"var"});
+  if (funcionario==="Vitor" && (diaNome==="Terça"||diaNome==="Sexta"))
+    out.push({tarefa:"Lago zen interno", tipo:"var"});
+  const vid = VIDRACARIAS[semana];
+  if (diaNome==="Quinta"){
+    if (vid["Clube/Portaria"].includes(funcionario))
+      out.push({tarefa:"Limpeza de vidros – Clube/Portaria", tipo:"vidro"});
+    if (vid["Prainha"].includes(funcionario))
+      out.push({tarefa:"Limpeza de vidros – Prainha", tipo:"vidro"});
+  }
+  return out;
+}
+
+/* ======= ESTADO ======= */
+let usuario="", semana=3, diaIdx=0;
+
+/* ======= HELPERS CLOUD STORAGE ======= */
+async function loadChecks() {
+  const { data, error } = await sb
+    .from('checks')
+    .select('idTarefa,concluido')
+    .eq('usuario', usuario)
+    .eq('semana', semana)
+    .eq('dia', diaIdx);
+  if (error) {
+    console.error("Erro loadChecks:", error);
+    return {};
+  }
+  const out = {};
+  (data||[]).forEach(d=>{ out[d.idTarefa]=d.concluido; });
+  return out;
+}
+
+async function saveCheck(id, val) {
+  try {
+    const { data, error } = await sb
+      .from("checks")
+      .upsert(
+        [{ usuario, semana, dia: diaIdx, idTarefa: id, concluido: !!val }],
+        { onConflict: ["usuario","semana","dia","idTarefa"] }
+      );
+    if (error) throw error;
+    console.log("Salvo no Supabase:", data);
+  } catch (err) {
+    console.error("Erro ao salvar check:", err);
+  }
+}
+/* ======= UI ======= */
+const $ = s=>document.querySelector(s);
+
+$("#btnEntrar").onclick = async ()=>{
+  usuario = $("#funcionarioSelect").value;
+  semana = +$("#semanaInicial").value;
+  diaIdx = +$("#diaInicial").value;
+  $("#nomeFuncionario").textContent = usuario;
+  $("#login").style.display="none";
+  $("#app").style.display="";
+  await renderDia(); /* tornar a transição mais estável */
+};
+
+/* FIX 3: handler do botão Home (estava faltando nessa versão) */
+document.getElementById("btnHome").onclick = ()=>{
+  document.getElementById("login").style.display = "";
+  document.getElementById("app").style.display = "none";
+  document.getElementById("supervisor").style.display = "none";
+};
+
+async function renderDia(){
+  $("#semanaAtual").textContent = semana;
+  $("#diaAtual").textContent = DIAS[diaIdx];
+
+  const wrap = $("#listaTarefas");
+  wrap.innerHTML = "";
+  const ul = document.createElement("ul");
+
+  const saved = await loadChecks();
+
+  // FIXAS do usuário
+  FIXAS[semana].filter(t=>t.responsavel===usuario)
+    .forEach((t,i)=>ul.appendChild(renderItem(`fixa_${i}_${t.tarefa}`, t.tarefa, "fixa", saved)));
+
+  // VARIÁVEIS do dia
+  variaveisDoDia(semana, DIAS[diaIdx], usuario)
+    .forEach((t,i)=>ul.appendChild(renderItem(`var_${i}_${t.tarefa}`, t.tarefa, t.tipo, saved)));
+
+  // VIDRAÇARIAS
+  if (DIAS[diaIdx] === "Quinta") {
+    const vmap = VIDRACARIAS[semana];
+    Object.keys(vmap).forEach(loc=>{
+      if(vmap[loc].includes(usuario)){
+        ul.appendChild(renderItem(`vid_${loc}`, `Vidraçaria – ${loc}`, "vidro", saved));
+      }
+    });
+  }
+
+  wrap.appendChild(ul);
+}
+
+function renderItem(id, texto, tipo, saved){
+  const li = document.createElement("li");
+  li.className="task";
+  const cb = document.createElement("input");
+  cb.type="checkbox";
+  cb.checked = !!saved[id];
+  cb.onchange = ()=>{ saveCheck(id, cb.checked); checkAllDone(); };
+  const span = document.createElement("span");
+  span.textContent = " "+texto;
+  const tag = document.createElement("span");
+  tag.className = "pill " + (tipo==="fixa"?"tag-fixa":tipo==="vidro"?"tag-vidro":"tag-var");
+  tag.textContent = tipo==="fixa"?"FIXA":tipo==="vidro"?"VIDRAÇARIA":"VARIÁVEL";
+  li.append(cb, span, tag);
+  return li;
+}
+
+function checkAllDone(){
+  const boxes = document.querySelectorAll("#listaTarefas input[type=checkbox]");
+  if([...boxes].length && [...boxes].every(cb=>cb.checked)){
+    avancarDia(true);
+  }
+}
+
+async function avancarDia(automatico=false){
+  let cicloCompleto = semana === 4 && diaIdx === 4; // sexta da semana 4
+
+  diaIdx++;
+  if(diaIdx >= DIAS.length){ 
+    diaIdx = 0; 
+    semana++; 
+    if(semana > 4) semana = 1; 
+  }
+
+  if(cicloCompleto && semana === 1 && diaIdx === 0){
+    await limparTodosChecks(); // reinicia ciclo
+    alert("Ciclo reiniciado: todas as tarefas foram desmarcadas.");
+  }
+
+  await renderDia();
+  if(automatico) alert("Tudo concluído! Avançamos para o próximo dia.");
+}
+
+document.getElementById("btnAvancar").onclick = ()=>avancarDia(false);
+document.getElementById("btnAnterior").onclick = async ()=>{
+  diaIdx--;
+  if (diaIdx < 0) { diaIdx = DIAS.length - 1; semana--; if (semana < 1) semana = 4; }
+  await renderDia();
+};
+
+/* Marcar todas */
+$("#btnMarcarTodas").onclick = ()=>{
+  document.querySelectorAll("#listaTarefas input[type=checkbox]").forEach(cb=>{
+    cb.checked=true; cb.onchange();
+  });
+};
+
+/* ======= Supervisor ======= */
+$("#btnSupervisor").onclick = async ()=>{
+  const senhaCorreta = "1234";
+  const tentativa = prompt("Digite a senha do supervisor:");
+  if(tentativa === senhaCorreta){
+const semanaSup =+$("#semanaInicial").value;
+const diaSup =+$("#diaInicial").value;
+
+    $("#login").style.display="none";
+    $("#supervisor").style.display="";
+
+
+
+    await renderSupervisor(semanaSup,diaSup);
+  } else alert("Senha incorreta!");
+};
+$("#btnVoltar").onclick = ()=>{
+  $("#supervisor").style.display="none";
+  $("#login").style.display="";
+};
+
+/* Consulta de status individual (otimizada) */
+async function getCheckStatus(funcionario, semanaNum, diaNum, id) {
+  const { data, error } = await sb
+    .from('checks')
+    .select('concluido')
+    .eq('usuario', funcionario)
+    .eq('semana', semanaNum)
+    .eq('dia', diaNum)
+    .eq('idTarefa', id)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') { // ignore "no rows"
+    console.error("Erro getCheckStatus:", error);
+  }
+  return data ? !!data.concluido : false;
+}
+
+async function renderSupervisor(semanaSup, diaSup){
+  try {
+    // Sumário da semana
+    const v = VIDRACARIAS[semanaSup];
+    $("#sumarioSemana").innerHTML =
+      `<div class="muted">Semana ${semanaSup} · Vidraçarias — Clube/Portaria: <b>${v["Clube/Portaria"].join(" e ")}</b> · Prainha: <b>${v["Prainha"].join(" e ")}</b></div>`;
+
+    // Lista de tarefas fixas
+    const fixWrap = $("#fixasSemana"); 
+    fixWrap.innerHTML = "";
+    const ul = document.createElement("ul");
+    for(const [i,f] of FIXAS[semanaSup].entries()){
+      const done = await getCheckStatus(f.responsavel, semanaSup, diaSup, `fixa_${i}_${f.tarefa}`);
+      const li = document.createElement("li");
+      li.className="task";
+      li.innerHTML = `<span>${f.responsavel}: ${f.tarefa}</span>
+        <span class="pill tag-fixa">FIXA</span>
+        <span style="margin-left:8px">${done ? "✅" : "❌"}</span>`;
+      ul.appendChild(li);
+    }
+    fixWrap.appendChild(ul);
+
+    // Kanban diário
+    const k = $("#kanban"); 
+    k.innerHTML = "";
+    for(let dIndex=0; dIndex<DIAS.length; dIndex++){
+      const dn = DIAS[dIndex];
+      const col = document.createElement("div"); 
+      col.className="col";
+      const h = document.createElement("h4"); 
+      h.textContent = dn; 
+      col.appendChild(h);
+      const body = document.createElement("div"); 
+      body.className="body";
+
+      for(const f of FUNCIONARIOS){
+        // Tarefas fixas do funcionário
+        for(const [i,t] of FIXAS[semanaSup].filter(t=>t.responsavel===f).entries()){
+          const done = await getCheckStatus(f, semanaSup, dIndex, `fixa_${i}_${t.tarefa}`);
+          const li = document.createElement("div");
+          li.className="task";
+          li.innerHTML = `${f}: ${t.tarefa} <span class="pill tag-fixa">FIXA</span> <span style="margin-left:8px">${done ? "✅" : "❌"}</span>`;
+          body.appendChild(li);
+        }
+
+        // Tarefas variáveis do dia
+        for (const [i,t] of variaveisDoDia(semanaSup, dn, f).entries()){
+          const done = await getCheckStatus(f, semanaSup, dIndex, `var_${i}_${t.tarefa}`);
+          const li = document.createElement("div");
+          li.className="task";
+          li.innerHTML = `${f}: ${t.tarefa} <span class="pill ${t.tipo==="vidro"?"tag-vidro":"tag-var"}">${t.tipo==="vidro"?"VIDRAÇARIA":"VARIÁVEL"}</span> <span style="margin-left:8px">${done ? "✅" : "❌"}</span>`;
+          body.appendChild(li);
+        }
+
+        // Vidraçarias só na quinta
+        if(dn === "Quinta"){
+          const vmap = VIDRACARIAS[semanaSup];
+          for (const loc of Object.keys(vmap)){
+            if(vmap[loc].includes(f)){
+              const done = await getCheckStatus(f, semanaSup, dIndex, `vid_${loc}`);
+              const li = document.createElement("div");
+              li.className="task";
+              li.innerHTML = `${f}: Vidraçaria – ${loc} <span class="pill tag-vidro">VIDRAÇARIA</span> <span style="margin-left:8px">${done ? "✅" : "❌"}</span>`;
+              body.appendChild(li);
+            }
+          }
+        }
+
+      }
+
+      col.appendChild(body);
+      k.appendChild(col);
+    }
+
+  } catch(err){
+    console.error("Erro no renderSupervisor:", err);
+  }
+}
+
+async function limparTodosChecks(){
+  try {
+    await sb
+      .from("checks")
+      .delete()
+      .eq("usuario", usuario);
+    console.log("Todas as tarefas foram desmarcadas.");
+  } catch(err) {
+    console.error("Erro ao limpar tasks:", err);
+  }
+}
+
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js")
+      .then(() => console.log("Service Worker registrado com sucesso"))
+      .catch(err => console.error("Erro ao registrar Service Worker:", err));
+  }
+
+
+</script>
+</body>
+</html>
